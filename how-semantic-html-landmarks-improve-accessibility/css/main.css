@@ -1,0 +1,100 @@
+/* Header */
+
+header,
+#header {
+    background: #BF360C;
+    color: #FFE0D6;
+    padding-top: .5rem;
+    padding-bottom: .5rem;
+}
+
+header nav,
+#header .header-nav {
+    margin-top: 1rem;
+    font-size: 1.125rem;
+}
+
+header a,
+#header a,
+header a:hover,
+#header a:hover,
+header a:visited,
+#header a:visited {
+    color: #fff;
+}
+
+.no-decorator {
+    text-decoration: none;
+}
+
+.logo {
+    width: 8%;
+    vertical-align: middle;
+}
+
+.wordmark {
+    display: inline;
+    font-size: 1.5rem;
+    font-weight: bold;
+    vertical-align: middle;
+}
+
+.wordmark:hover,
+.wordmark:visited {
+    text-decoration: underline;
+}
+
+.nav-link {
+    color: #fff;
+}
+
+.nav-link:first-child {
+    padding-left: 0;
+}
+
+.nav-link:focus, .nav-link:hover {
+    color: #fff;
+    text-decoration: underline;
+}
+
+/* Main */
+
+main,
+#main {
+    margin-top: 1rem;
+    margin-bottom: 1rem;
+}
+
+/* Footer */
+
+footer,
+#footer {
+    background: #8D6E63;
+    color: #fff;
+    padding-top: .5rem;
+    padding-bottom: .5rem;
+}
+
+footer a,
+#footer a,
+footer p,
+#footer p {
+    margin-bottom: 0;
+}
+
+footer a,
+#footer a,
+footer a:hover,
+#footer a:hover,
+footer a:visited,
+#footer a:visited {
+    color: #fff;
+}
+
+small {
+    font-size: 1rem;
+}
+
+.copyright {
+    margin-top: .5rem;
+}
