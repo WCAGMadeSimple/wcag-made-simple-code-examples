@@ -33,11 +33,11 @@ This example has been tested with:
 
 ## What's in This Example
 
-- `strong-vs-bold-em-vs-italic.html` – A single page listing all three approaches for both bold and italic, designed to be explored with a screen reader and the Firefox Accessibility Tree
+- `index.html` – A single page listing all three approaches for both bold and italic, designed to be explored with a screen reader and the Firefox Accessibility Tree
 
 ## How to Use
 
-1. Open `strong-vs-bold-em-vs-italic.html` in your browser
+1. Open `index.html` in your browser
 2. Use a screen reader (e.g. VoiceOver, NVDA) to hear how each approach is announced
 3. Open the Accessibility panel in Firefox DevTools to inspect how each element appears in the accessibility tree — this is where the difference becomes clear
 
