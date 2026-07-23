@@ -9,7 +9,7 @@ Landmarks help assistive technologies (like screen readers) provide quick naviga
 This example has been tested with:
 - VoiceOver
 - Safari
-- MacOs
+- macOS
 
 ## What Are Landmarks?
 
@@ -48,7 +48,7 @@ No build tools required — everything is plain HTML.
 ## Related Resources
 
 - (Blog) [From Fog to Skyline: How Semantic HTML Landmarks Improve Accessibility](https://wcagmadesimple.com/blog/how-semantic-html-landmarks-improve-accessibility)
-- (PDF) [Semantic HTML Landmarks Cheat Sheet](https://www.wcagmadesimple.com/resources/how-semantic-html-landmarks-improve-accessibility/semantic-html-landmarks-cheatsheet.pdf)
+- (PDF) [Semantic HTML Landmarks Cheat Sheet](https://wcagmadesimple.com/resources/how-semantic-html-landmarks-improve-accessibility/semantic-html-landmarks-cheatsheet.pdf)
 - (Youtube) [Semantic HTML Landmarks Made Simple](https://www.youtube.com/watch?v=qPW8mcGy0Zg)
 - (MDN Docs) [Using HTML sections and outlines](https://developer.mozilla.org/en-US/docs/Web/HTML/Element#content_sectioning)
 - (WCAG 2.2 Reference) [WCAG 2.2 – Info and Relationships](https://www.w3.org/WAI/WCAG22/Understanding/info-and-relationships.html)
