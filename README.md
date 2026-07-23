@@ -2,7 +2,7 @@
 
 Accessible front-end code snippets, demos, and patterns that align with [WCAG 2.2](https://www.w3.org/WAI/standards-guidelines/wcag/) and practical accessibility best practices.
 
-These examples are companion resources to the [WCAG Made Simple blog](https://wcagmadesimple.com), where posts are paired with tutorials, explanations, and PDF cheat sheets.
+These examples are companion resources to the [WCAG Made Simple Blog](https://wcagmadesimple.com), where posts are paired with tutorials, explanations, and PDF cheat sheets.
 
 ## 📖 What You’ll Find Here
 
@@ -31,16 +31,16 @@ Inside each folder, you’ll typically find:
 Clone the repo and open any example in your browser:
 
 ```bash
-git clone https://github.com/yourusername/wcag-made-simple-code-examples.git
+git clone https://github.com/WCAGMadeSimple/wcag-made-simple-code-examples.git
 cd wcag-made-simple-code-examples
 ```
-No build tools required—these are intentionally kept vanilla for clarity.
+
+No build tools required. These examples are intentionally kept vanilla for clarity and ease-of-use.
 
 ## 🔗 Related Resources
 
 - 📘 [WCAG Made Simple Blog](https://wcagmadesimple.com) – full articles & tutorials
-- 📄 Free PDF accessibility cheat sheets (coming soon)
-- 🎥 YouTube channel (coming soon) – walk-throughs of these examples
+- 🎥 [WCAG Made Simple YouTube Channel](https://www.youtube.com/@WCAGMadeSimple) – walk-throughs of these examples
 
 ## 🤝 Contributing
 
@@ -50,7 +50,7 @@ Please make sure code PRs:
 - are accessible first
 - have been manually / screen reader tested
 - commits are small and focused
-- commits follow the [coventional commit guidelines](https://www.conventionalcommits.org/en/v1.0.0/)
+- commits follow the [conventional commit guidelines](https://www.conventionalcommits.org/en/v1.0.0/)
 - update the relevant README description
 - maintain the MIT license
 
@@ -68,10 +68,9 @@ This repository is designed to help developers, designers, and organizations cre
 
 While the examples follow [WCAG 2.2 guidelines](https://www.w3.org/WAI/standards-guidelines/wcag/), they also provide practical guidance for compliance with key accessibility laws and regulations, including:
 
-
 - **ADA (Americans with Disabilities Act)** – United States
 - **Section 508 (Rehabilitation Act)** – United States
-- **CDA (Canadian Disability Act)** – Canada
+- **ACA (Accessible Canada Act)** – Canada
 - **AODA (Accessibility for Ontarians with Disabilities Act)** – Ontario, Canada
 - **IASR (Integrated Accessibility Standards Regulation)** – Ontario, Canada
 - Other national or international laws and regulations that reference WCAG standards
