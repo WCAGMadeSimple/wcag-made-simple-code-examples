@@ -1,0 +1,184 @@
+  :root {
+    --color-text: #2b3a4a;
+    --color-muted: #445;
+    --color-primary: #236DA9;
+    --color-primary-bg: #e2eaf1;
+    --color-border: #e8ecf0;
+    --color-error: #c62828;
+    /* Border and label of the disabled button. 8.68:1 on white, dark
+       enough that the fill below still clears 4.5:1 behind it. Never
+       dimmed with opacity - see README, "Disabled state is signalled by
+       fill, not opacity". */
+    --color-disabled: #3f4d5a;
+    /* 1.46:1 against the white page. Anything lighter stops reading as a
+       fill and starts reading as an off-white cast. */
+    --color-disabled-bg: #ced7e0;
+    /* Swapped in only on the disabled button, where a vivid blue clashed
+       with the desaturated grey ground. 10.89:1 on white. */
+    --color-focus-disabled: #14405f;
+    --focus-ring: 3px solid var(--color-primary);
+  }
+
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: var(--color-text);
+  }
+
+  /* Defined rather than left to the browser default, which differs across
+     Chrome, Safari and Firefox. See README, "Every focusable element
+     defines its own focus ring". */
+  a:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  load-more-list ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  load-more-list li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .load-more-button {
+    margin-top: 1rem;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    border: 2px solid var(--color-primary);
+    background: #fff;
+    color: var(--color-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .load-more-button--error {
+    display: block;
+    border: 2px solid var(--color-error);
+    color: var(--color-error);
+  }
+
+  .load-more-button--error:active {
+    background: var(--color-error);
+    color: var(--color-primary-bg);
+  }
+
+  /* Filled and outlined, not dimmed: a grey fill carries the state and a
+     darker grey border and label sit on top of it, at 5.96:1. Both values
+     are picked together, since darkening one without the other is what
+     puts this pair below 4.5:1. */
+  .load-more-button[aria-disabled="true"] {
+    background: var(--color-disabled-bg);
+    border-color: var(--color-disabled);
+    color: var(--color-disabled);
+    cursor: not-allowed;
+  }
+
+  /* 6px, not the 2px used elsewhere, and the offset is load-bearing. It
+     puts page white on both edges of the ring, which is what both ring
+     colours are measured against. At offset 0 the disabled button's ring
+     sits straight on its own border at 1.26:1 and fails 1.4.11, since the
+     two are both dark desaturated blues. It also keeps the ring from
+     reading as one doubled edge with the button's 2px border. Recheck
+     that pair before reducing this. */
+  .load-more-button:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 6px;
+  }
+
+  /* Wins on specificity over the rule above, so only the colour is
+     overridden and width/offset stay defined once. */
+  .load-more-button[aria-disabled="true"]:focus-visible {
+    outline-color: var(--color-focus-disabled);
+  }
+
+  /* inaccessible-load-more-pattern.html only. Carries the two anti-patterns the
+     accessible demo exists to replace, so both files can share every
+     other button visual and differ on nothing else. */
+
+  /* Hands the focus ring back to the browser. In the wild this bug is an
+     omission - nobody writes a rule at all - but these demos share one
+     stylesheet, so the inaccessible one has to opt out on purpose. Offset
+     reverts too, since the 6px above would otherwise push the native ring
+     out with it. */
+  .load-more-button--inaccessible:focus-visible {
+    outline: revert;
+    outline-offset: revert;
+  }
+
+  /* The faded-out disabled state, and the mirror of the
+     [aria-disabled="true"] rule above. Opacity dims the element whole, so
+     the 5.48:1 label and border composite down to 2.54:1 against the page:
+     the contrast is destroyed by the same declaration that signals the
+     state. The accessible demo carries the state in hue and fill instead
+     and holds 5.96:1. See README, "Disabled state is signalled by fill,
+     not opacity". */
+  .load-more-button--inaccessible:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+
+  .result-title {
+    margin: 0 0 0.25rem;
+    font-size: 1.05rem;
+  }
+
+  .result-title a {
+    color: var(--color-primary);
+  }
+
+  .result-description {
+    margin: 0 0 0.4rem;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+  }
+
+  .result-province {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-primary);
+    background: var(--color-primary-bg);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  .error-message {
+    color: var(--color-error);
+    font-weight: bold;
+  }
+
+  /*
+   * The !important declarations are to ensure proper override of the 
+   * .visually-hidden styles which are also applied to this element.
+   */
+  .batch-marker:focus-visible {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    clip-path: none !important;
+    white-space: normal !important;
+    padding: 0.5rem 0 !important;
+    margin-bottom: 0.5rem !important;
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }

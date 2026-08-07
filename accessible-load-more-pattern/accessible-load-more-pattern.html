@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Accessible load more pattern | WCAG Made Simple</title>
+<link rel="stylesheet" href="./css/main.css">
+</head>
+<body>
+
+<h1>Accessible load more pattern</h1>
+<p>Demo of a load-more list built as plain web components. No framework, no build steps, just <code>customElements.define</code>.</p>
+
+<h2 id="parksHeading">Canadian National Parks</h2>
+
+<load-more-list batch-size="5"></load-more-list>
+
+<!-- import parks data -->
+<script src="./data/parks-data.js"></script>
+
+<script>
+/**
+ * DEMO ONLY. How long fetchBatch() pretends the network is taking. Lives out
+ * here with the rest of the simulation rather than alongside LoadMoreList's
+ * own constants, since it goes away the moment fetchBatch() is a real fetch().
+ * Must stay above LOADING_ANNOUNCEMENT_DELAY or the loading announcement never
+ * fires. See README, "The 500ms loading threshold".
+ */
+const SIMULATED_FETCH_DELAY = 1500;
+
+/**
+ * <result-entry> - A single result: title link, description, province badge.
+ * List semantics stay on the native <li> around it, which is built by the
+ * parent <load-more-list>.
+ */
+class ResultEntry extends HTMLElement {
+  static get observedAttributes() {
+    return ['label', 'href', 'result-position', 'results-total', 'description', 'province'];
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  attributeChangedCallback() {
+    // guards against firing before the element is in the tree
+    if (this.isConnected) this.render();
+  }
+
+  render() {
+    // Clears the previous render, so an attribute change re-renders rather
+    // than appending a second heading, description, and badge below the first.
+    this.replaceChildren();
+
+    // Map component props to vars
+    const label = this.getAttribute('label') || '';
+    const href = this.getAttribute('href') || '#';
+    const resultPosition = this.getAttribute('result-position');
+    const resultsTotal = this.getAttribute('results-total');
+    const description = this.getAttribute('description') || '';
+    const province = this.getAttribute('province') || '';
+
+
+    const heading = document.createElement('h3');
+    heading.className = 'result-title';
+    const link = document.createElement('a');
+    link.href = href;
+    link.textContent = label;
+    // Position in aria-label, not aria-posinset/aria-setsize.
+    // See README, "Position in the Set".
+    if (resultPosition && resultsTotal) {
+      link.setAttribute('aria-label', `${label}, ${resultPosition} of ${resultsTotal}`);
+    }
+    heading.appendChild(link);
+    this.appendChild(heading);
+
+    if (description) {
+      const desc = document.createElement('p');
+      desc.className = 'result-description';
+      desc.textContent = description;
+      this.appendChild(desc);
+    }
+
+    if (province) {
+      const badge = document.createElement('span');
+      badge.className = 'result-province';
+      badge.innerHTML = province;
+      this.appendChild(badge);
+    }
+  }
+}
+
+customElements.define('result-entry', ResultEntry);
+
+/**
+ * <load-more-list> - fetches and displays results.
+ *
+ * Owns the <ul>, the "load more" button, the demo's "Simulate fetch failure"
+ * button, the aria-live status line, and the injected visible error message.
+ * Builds the <li> wrapper + <result-entry> for each item, so list semantics
+ * live here rather than inside result-entry, and manages loading state, error
+ * state, and focus movement.
+ */
+class LoadMoreList extends HTMLElement {
+  // used whenever batch-size is absent, unparseable, or not a positive integer
+  static DEFAULT_BATCH_SIZE = 10;
+
+  // One string, two deliveries: the live region and the visible message.
+  // See README, "Error Handling".
+  static ERROR_MESSAGE = 'Could not fetch new results. Please try again.';
+
+  // A default delay is configurable but not necessary
+  static DEFAULT_ANNOUNCEMENT_DELAY = 0;
+
+  // This delay is based on user research from the NN/Group
+  // See README, "The 500ms loading threshold".
+  static LOADING_ANNOUNCEMENT_DELAY = 500;
+
+  constructor() {
+    super();
+    // Internal state only, none of it read from an attribute or anything else
+    // the caller provides - see the batchSize accessor below for that rule.
+    this.total = null; // unknown until the first response says
+    this.accruedResults = 0;
+    this.loading = false;
+    this.announcementTimer = null;
+  }
+
+  /**
+   * Read live from the attribute, never captured in the constructor. At
+   * construction time an element's attributes may not exist yet, so
+   * document.createElement('load-more-list') would lock in DEFAULT_BATCH_SIZE
+   * and silently ignore a batch-size set on the very next line.
+   *
+   * Validated with `> 0`, not merely defaulted when absent. parseInt returns
+   * NaN for a missing or unparseable attribute, and a negative is truthy.
+   * Unguarded, NaN and 0 make the slice in fetchBatch() come back empty, so
+   * the button announces "0 results loaded" on every press and never finishes.
+   */
+  get batchSize() {
+    const parsed = Number.parseInt(this.getAttribute('batch-size'), 10);
+    return parsed > 0 ? parsed : LoadMoreList.DEFAULT_BATCH_SIZE;
+  }
+
+  /**
+   * Paired with the getter so el.batchSize = 5 reflects to the attribute
+   * instead of defining an own property that shadows the accessor, which would
+   * leave the element reading a value the attribute knows nothing about.
+   */
+  set batchSize(value) {
+    this.setAttribute('batch-size', value);
+  }
+
+  connectedCallback() {
+    this.innerHTML = `
+      <!-- list-style: none makes VoiceOver drop the implicit list role, so it
+           is restored explicitly. See README, "VoiceOver drops list
+           semantics". -->
+      <ul id="resultsList" role="list" aria-labelledby="parksHeading"></ul>
+      <button type="button" class="load-more-button" id="loadMoreButton">Load more</button>
+      <!--
+        DEMO ONLY, not part of the pattern. Runs the same load attempt as
+        "Load more", forced to fail, so the error state can be heard on
+        demand. Removed alongside "Load more" once everything has loaded.
+      -->
+      <button type="button" class="load-more-button load-more-button--error" id="simulateFailureButton">Simulate fetch failure</button>
+      <p id="statusMessage" class="visually-hidden" role="status" aria-live="polite"></p>
+    `;
+
+    this.listElement = this.querySelector('ul');
+    this.loadMoreButton = this.querySelector('#loadMoreButton');
+    this.simulateFailureButton = this.querySelector('#simulateFailureButton');
+    this.statusElement = this.querySelector('#statusMessage');
+    // only in the DOM while an error is shown, see showErrorMessage()
+    this.errorElement = null;
+
+    this.loadMoreButton.addEventListener('click', () => this.loadMore());
+    this.simulateFailureButton.addEventListener('click', () => this.loadMore(true));
+
+    this.loadMore();
+  }
+
+  /**
+   * Simulate a network call, replace with a real fetch in production.
+   * a real paginated endpoint's response body would carry its own total
+   * count alongside the page of items, e.g. { items, total }
+   *
+   * DEMO ONLY: forceError drives the catch branch in loadMore() on demand. A
+   * real failure comes from fetch() rejecting or returning a non-2xx response.
+   */
+  fetchBatch(forceError = false) {
+    return new Promise((resolve, reject) => {
+      if (forceError) {
+        reject(new Error('Simulated fetch failure'));
+        return;
+      }
+
+      setTimeout(() => {
+        const total = PARKS_DATA.length;
+        // take whatever is smallest, batchSize or remaining items, so we don't overshoot the total
+        const count = Math.min(this.batchSize, total - this.accruedResults);
+        const items = PARKS_DATA.slice(this.accruedResults, this.accruedResults + count);
+        resolve({ items, total });
+      }, SIMULATED_FETCH_DELAY);
+    });
+  }
+
+  // forceError: DEMO ONLY, passed through from the "Simulate fetch failure"
+  // button so one click exercises the same path as a failed "Load more".
+  async loadMore(forceError = false) {
+    // guard against double-clicks and overshooting the total. total is null
+    // until the first fetch resolves, so that half is skipped until then
+    if (this.loading || (this.total !== null && this.accruedResults >= this.total)) return;
+
+    const isFirstLoad = this.accruedResults === 0;
+
+    this.loading = true;
+    // aria-disabled, never disabled, which would drop the button out of the
+    // tab order mid-fetch. See README, "Disabling Without Losing Focus".
+    this.loadMoreButton.setAttribute('aria-disabled', 'true');
+    this.loadMoreButton.textContent = 'Loading...';
+
+    // Cleared at the start of the attempt, not on completion, so a retry can't
+    // leave a stale error above a fresh batch. See README, "Error Handling".
+    this.clearErrorMessage();
+
+    // Superseded rather than spoken if the fetch beats the delay, since
+    // announce() keeps one pending message. See README, "The 500ms loading threshold".
+    this.announce('Loading results.', LoadMoreList.LOADING_ANNOUNCEMENT_DELAY);
+
+    try {
+      const { items, total } = await this.fetchBatch(forceError);
+
+      if (this.total === null) this.total = total;
+
+      const amountLoaded = items.length;
+
+      const fragment = document.createDocumentFragment();
+      let marker = null;
+
+      // don't add a marker ahead of the very first batch, there's nothing to announce yet
+      if (!isFirstLoad) {
+        // accruedResults hasn't been incremented yet, so add this batch to get
+        // the same post-batch total that announce() is handed below
+        marker = this.createBatchMarker(
+          this.batchMessage(amountLoaded, this.accruedResults + amountLoaded)
+        );
+        fragment.appendChild(marker);
+      }
+
+      items.forEach((park, i) => {
+        const resultPosition = this.accruedResults + i + 1;
+
+        const li = document.createElement('li');
+        // Restoring role="list" on the parent does not cascade down, so each
+        // <li> reasserts it. See README, "VoiceOver drops list semantics".
+        li.setAttribute('role', 'listitem');
+
+        const entry = document.createElement('result-entry');
+        entry.setAttribute('label', park.name);
+        entry.setAttribute('href', '#');
+        entry.setAttribute('result-position', resultPosition);
+        entry.setAttribute('results-total', this.total);
+        entry.setAttribute('description', park.description);
+        entry.setAttribute('province', park.province);
+
+        li.appendChild(entry);
+        fragment.appendChild(li);
+      });
+      this.listElement.appendChild(fragment);
+
+      /**
+       * Focus the marker at the start of the new batch, not back to the button.
+       * Must follow the appendChild above: focus() is a no-op inside a fragment.
+       *
+       * Known limitation, not a defect in this pattern: this lands real keyboard
+       * focus correctly, but Safari/VoiceOver can fail to move its own virtual
+       * cursor to match. Confirmed, fixed WebKit bug. See README, "VoiceOver
+       * does not follow focus() on newly added elements".
+       */
+      if (marker) {
+        marker.focus();
+      }
+
+      this.accruedResults += amountLoaded;
+
+      // Focus first, then remove: neither button has a job left, and removing
+      // one that still held focus would drop focus to <body>.
+      if (this.accruedResults >= this.total) {
+        this.loadMoreButton.remove();
+        this.simulateFailureButton.remove();
+      }
+
+      // One announcement instead of one per outcome: batchMessage() picks the
+      // wording using the same accruedResults >= total check as the if above.
+      this.announce(this.batchMessage(amountLoaded, this.accruedResults));
+    } catch (error) {
+      // DEMO: the only failure reaching this branch is the simulated one, so
+      // it logs on every "Simulate fetch failure" click.
+      console.error('Error:', error);
+
+      // Two messages, two audiences. See README, "Error Handling".
+      this.showErrorMessage(LoadMoreList.ERROR_MESSAGE);
+      this.announce(LoadMoreList.ERROR_MESSAGE);
+    } finally {
+      // Runs on every exit, so no throw can leave the button stuck on
+      // "Loading..." with the guard above rejecting every later press.
+      this.loading = false;
+      this.loadMoreButton.removeAttribute('aria-disabled');
+      this.loadMoreButton.textContent = 'Load more';
+    }
+  }
+
+  /**
+   * Builds the batch marker: the visually hidden landing spot that focus moves
+   * to when a new batch arrives. See README, "Keyboard Focus and the Batch
+   * Marker".
+   *
+   * Returns the <li> rather than inserting it, and takes the message rather
+   * than deriving it, so this stays a plain builder that knows nothing about
+   * the list, the fragment, or whether accruedResults has been incremented.
+   */
+  createBatchMarker(message) {
+    const marker = document.createElement('li');
+    marker.className = 'visually-hidden batch-marker';
+    // listitem, not separator - the spec permits no other role on an <li>
+    // inside a list. See README, "Why role=listitem, not role=separator".
+    marker.setAttribute('role', 'listitem');
+    // Focusable only via .focus(), never by Tab. The visible text is for
+    // sighted keyboard users; the spoken message stays the live region's job.
+    marker.tabIndex = -1;
+    // Removed once focus leaves, so arrow-key browse mode can't reach it later.
+    // Deferred because focusout fires mid-transfer.
+    marker.addEventListener('focusout', () => {
+      setTimeout(() => marker.remove(), 0);
+    }, { once: true });
+
+    const markerText = document.createElement('span');
+    markerText.setAttribute('aria-hidden', 'true');
+    markerText.textContent = message;
+    marker.appendChild(markerText);
+
+    return marker;
+  }
+
+  /**
+   * The single source for this component's "what just happened" message, since
+   * the marker's visible text and the live region announcement have to say the
+   * same thing and drift between them is close to invisible in review.
+   *
+   * accruedResults is always the running total *including* the batch just
+   * added, so callers on either side of the increment get the same string.
+   */
+  batchMessage(amountLoaded, accruedResults) {
+    return accruedResults >= this.total
+      ? `${amountLoaded} results loaded, all ${this.total} results shown.`
+      : `${amountLoaded} results loaded, ${accruedResults} of ${this.total} shown.`;
+  }
+
+  // The visible, sighted-user-only error message. aria-hidden because the live
+  // region already covers screen reader users. See README, "Error Handling".
+  showErrorMessage(message) {
+    this.clearErrorMessage();
+    this.errorElement = document.createElement('p');
+    this.errorElement.className = 'error-message';
+    this.errorElement.setAttribute('aria-hidden', 'true');
+    this.errorElement.textContent = message;
+    this.loadMoreButton.before(this.errorElement);
+  }
+
+  clearErrorMessage() {
+    if (!this.errorElement) return;
+    this.errorElement.remove();
+    this.errorElement = null;
+  }
+
+  /**
+   * Every announcement goes through here: statusElement is emptied first, then
+   * the message is written after `delay`. That gap is what lets a later call
+   * take the place of one still waiting on its timer, which is how the delayed
+   * "Loading results." message is superseded when a fetch beats it. See
+   * README, "Replacing a message before it is spoken".
+   *
+   * One pending announcement per component: a second call during the wait
+   * replaces the first rather than queueing behind it. That is only safe
+   * because loadMore() emits at most one outcome message per interaction.
+   * If you reuse announce() somewhere else, make sure only one thing is
+   * sending messages there too. See README, "Where this approach stops
+   * fitting".
+   */
+  announce(message, delay = LoadMoreList.DEFAULT_ANNOUNCEMENT_DELAY) {
+    this.cancelAnnouncement();
+    this.statusElement.textContent = '';
+    this.announcementTimer = setTimeout(() => {
+      this.announcementTimer = null;
+      this.statusElement.textContent = message;
+    }, delay);
+  }
+
+  // Drops a scheduled announcement with no replacement; teardown below is the
+  // only caller besides announce(). No-op on an undefined or already-fired id.
+  cancelAnnouncement() {
+    clearTimeout(this.announcementTimer);
+    this.announcementTimer = null;
+  }
+
+  // A timer scheduled against statusElement outlives the element it writes to,
+  // so a component removed mid-fetch would announce into a detached node.
+  disconnectedCallback() {
+    this.cancelAnnouncement();
+  }
+}
+
+customElements.define('load-more-list', LoadMoreList);
+</script>
+
+</body>
+</html>
