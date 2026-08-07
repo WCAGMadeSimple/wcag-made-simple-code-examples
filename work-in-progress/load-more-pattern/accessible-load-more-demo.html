@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Accessible load more pattern | WCAG Made Simple</title>
+<link rel="stylesheet" href="./css/main.css">
+</head>
+<body>
+
+<h1>Accessible load more pattern</h1>
+<p>demo of a load-more list built as a plain web component. no framework, no build step, just <code>customElements.define</code>.</p>
+
+<h2 id="parksHeading">Canadian National Parks</h2>
+
+<load-more-list batch-size="5"></load-more-list>
+
+<!-- import parks data -->
+<script src="./data/parks-data.js"></script>
+
+<script>
+/**
+ * <result-entry> - A single result.
+ * 
+ * Owns the title link, description, and province badge, nothing structural.
+ * List semantics stay on the native <li> around it (which is generated in 
+ * the parent <load-more-list> component).
+ */
+class ResultEntry extends HTMLElement {
+  static get observedAttributes() {
+    return ['label', 'href', 'result-position', 'results-total', 'description', 'province'];
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  attributeChangedCallback() {
+    // guards against firing before the element is in the tree
+    if (this.isConnected) this.render();
+  }
+
+  render() {
+    /**
+     * Defensive, not currently exercised: every entry's attributes are set
+     * before it's inserted into the DOM, so render() only ever runs once per
+     * instance today and this clears nothing. It's here so the component
+     * stays correct if something later calls setAttribute() on an
+     * already-connected entry (e.g. updating description after a re-sort) -
+     * without it, that would re-run render() and duplicate the heading,
+     * description, and badge under the existing ones rather than replacing them.
+     */
+    this.replaceChildren();
+
+    // Map component props to vars
+    const label = this.getAttribute('label') || '';
+    const href = this.getAttribute('href') || '#';
+    const resultPosition = this.getAttribute('result-position');
+    const resultsTotal = this.getAttribute('results-total');
+    const description = this.getAttribute('description') || '';
+    const province = this.getAttribute('province') || '';
+
+
+    const heading = document.createElement('h3');
+    heading.className = 'result-title';
+    const link = document.createElement('a');
+    link.href = href;
+    link.textContent = label;
+    /**
+     * ${resultPosition} and ${resultsTotal} are baked into the link's aria-label
+     * as aria-posinset/aria-setsize attributes are not reliably
+     * announced across screen readers.
+     * 
+     * aria-label however, has some of the broadest support of any ARIA attribute across screen readers.
+     * 
+     * This example does not include filtering / sorting, but if it did
+     * it would require ${resultPosition} and ${resultsTotal} to recalculate accordingly.
+     */
+    if (resultPosition && resultsTotal) {
+      link.setAttribute('aria-label', `${label}, ${resultPosition} of ${resultsTotal}`);
+    }
+    heading.appendChild(link);
+    this.appendChild(heading);
+
+    if (description) {
+      const desc = document.createElement('p');
+      desc.className = 'result-description';
+      desc.textContent = description;
+      this.appendChild(desc);
+    }
+
+    if (province) {
+      const badge = document.createElement('span');
+      badge.className = 'result-province';
+      // innerHTML (not textContent) is intentional here: province can
+      // contain markup, e.g. an <abbr> for the province code.
+      badge.innerHTML = province;
+      this.appendChild(badge);
+    }
+  }
+}
+
+customElements.define('result-entry', ResultEntry);
+
+/**
+ * <load-more-list> - fetches and displays results.
+ *
+ * Owns the <ul>, the "load more" button, the demo's "Simulate fetch
+ * failure" button, the aria-live status line, and the dynamically-injected
+ * visible error message. Fetches batches, tracks how many results are
+ * shown, and builds the <li> wrapper + <result-entry> for each item (list
+ * semantics live here, not inside result-entry). Also manages loading
+ * state, error state, and focus movement so each new batch (or failure) is
+ * announced and keyboard focus lands predictably.
+ */
+class LoadMoreList extends HTMLElement {
+  constructor() {
+    super();
+    // unknown until the first fetch response tells us, since the
+    // component is the one doing the fetching, not the caller
+    this.resultsTotal = null;
+    this.batchSize = parseInt(this.getAttribute('batch-size') || '10');
+    this.shown = 0;
+    this.loading = false;
+  }
+
+  connectedCallback() {
+    this.innerHTML = `
+      <!--
+        role="list": Safari/VoiceOver drops a <ul>'s implicit list/listitem
+        semantics once list-style is set to none (see main.css), treating
+        it as plain text rather than a list. Restoring role="list"
+        explicitly re-establishes that for AT regardless of the CSS.
+      -->
+      <ul id="resultsList" role="list" aria-labelledby="parksHeading"></ul>
+      <button type="button" class="load-more-button" id="lm-button">Load more</button>
+      <!--
+        DEMO ONLY — not part of the pattern. Triggers the exact same load
+        attempt as "Load more" above, except forced to fail immediately, so
+        you can see/hear the error state on demand instead of waiting for
+        (or faking) a real network failure. Removed alongside the "Load
+        more" button once every result has loaded, since there's nothing
+        left to simulate failing.
+      -->
+      <button type="button" class="load-more-button load-more-button--error" id="lm-button-error">Simulate fetch failure</button>
+      <p id="ariaStatusLine" class="visually-hidden" role="status" aria-live="polite"></p>
+    `;
+
+    this.listEl = this.querySelector('ul');
+    this.buttonEl = this.querySelector('#lm-button');
+    this.errorButtonEl = this.querySelector('#lm-button-error');
+    this.statusEl = this.querySelector('#ariaStatusLine');
+    // only exists in the DOM while an error is being shown, see
+    // showErrorMessage()/clearErrorMessage()
+    this.errorEl = null;
+
+    this.buttonEl.addEventListener('click', () => this.loadMore());
+    this.errorButtonEl.addEventListener('click', () => this.loadMore(true));
+
+    this.loadMore();
+  }
+
+  /**
+   * simulate a network call, replace with a real fetch in production.
+   * a real paginated endpoint's response body would carry its own total
+   * count alongside the page of items, e.g. { items, total }
+   *
+   * DEMO ONLY: forceError exists purely so the "Simulate fetch failure"
+   * button can trigger the catch branch in loadMore() on demand, skipping
+   * the artificial delay below so the failure is instant. A real
+   * implementation's failure path comes from fetch() itself rejecting
+   * (network down) or resolving with a non-2xx response, not from a flag.
+   */
+  fetchBatch(forceError = false) {
+    return new Promise((resolve, reject) => {
+      if (forceError) {
+        reject(new Error('Simulated fetch failure'));
+        return;
+      }
+
+      setTimeout(() => {
+        const total = PARKS_DATA.length;
+        // take whatever is smallest, batchSize or remaining items, so we don't overshoot the total
+        const count = Math.min(this.batchSize, total - this.shown);
+        const items = PARKS_DATA.slice(this.shown, this.shown + count);
+        resolve({ items, total });
+      }, 1200);
+    });
+  }
+
+  /**
+   * forceError: DEMO ONLY, passed through from the "Simulate fetch
+   * failure" button so a single click can exercise the exact same code
+   * path as a real failed "Load more" click, just without the wait.
+   */
+  async loadMore(forceError = false) {
+    /**
+     * guard against double-clicks and overshooting the resultsTotal.
+     * resultsTotal is null until the first fetch resolves, so that part
+     * of the check is skipped until there's an actual number to compare
+     */
+    if (this.loading || (this.resultsTotal !== null && this.shown >= this.resultsTotal)) return;
+
+    const isFirstLoad = this.shown === 0;
+
+    this.loading = true;
+    this.listEl.setAttribute('aria-busy', 'true');
+    /**
+     * aria-disabled, not the disabled attribute: disabling a focused button
+     * pulls it out of the accessibility tree and boots focus somewhere
+     * unpredictable. VoiceOver in particular loses track of it and won't
+     * announce the text change either, since the element it was reading
+     * no longer exists by the time the change happens. The loading guard
+     * above already blocks double-submission, so nothing relies on the
+     * native disabled behavior to prevent re-clicks.
+     */
+    this.buttonEl.setAttribute('aria-disabled', 'true');
+    this.buttonEl.textContent = 'Loading...';
+
+    /**
+     * Clear the visible error message, if one exists, at the start of
+     * every attempt. This is the sighted-user counterpart to the status
+     * line reset, which now lives inside announce().
+     *
+     * The path this actually covers is failure followed by success:
+     * showErrorMessage() is only called from the catch branch, so a
+     * successful retry never clears anything on its own. Without this,
+     * the stale error would sit above the button indefinitely, directly
+     * above a freshly loaded batch of results. Failure followed by
+     * failure is already handled, since showErrorMessage() clears before
+     * it re-inserts.
+     *
+     * Cleared at the start of the attempt rather than on completion:
+     * once the user has retried, the previous error is no longer current
+     * information, whatever the retry ends up doing.
+     */
+    this.clearErrorMessage();
+
+    /**
+     * Don't announce "loading" immediately. Firing it right away risks the
+     * aria-live region getting two updates close together, screen readers
+     * often only speak a region's latest state when multiple changes land
+     * in quick succession, so the loading message can get silently dropped
+     * before it's ever read. Waiting also means a fast response never
+     * triggers an announcement nobody needed in the first place.
+     */
+    const loadingAnnounceTimer = setTimeout(() => {
+      this.announce('loading results.');
+    }, 500);
+
+    let items, total;
+    try {
+      ({ items, total } = await this.fetchBatch(forceError));
+    } catch (error) {
+      // whatever happens next, the loading attempt is over
+      clearTimeout(loadingAnnounceTimer);
+      this.loading = false;
+      this.listEl.removeAttribute('aria-busy');
+      this.buttonEl.removeAttribute('aria-disabled');
+      this.buttonEl.textContent = 'Load more';
+
+      /**
+       * Two separate messages, two separate audiences. this.statusEl stays
+       * visually-hidden here just like every other state it announces -
+       * role="status" + aria-live="polite" cover screen reader users
+       * regardless of visibility.
+       *
+       * Polite, not assertive: this isn't destructive or time-critical, so
+       * it can wait for whatever the screen reader is currently saying
+       * rather than talking over it.
+       *
+       * Nothing else on the page signals a failure, the result count
+       * doesn't change, so sighted users get their own visible message,
+       * injected by showErrorMessage() below.
+       */
+      this.showErrorMessage('Could not fetch new results. Please try again.');
+      this.announce('Could not fetch new results. Please try again.');
+
+      // no marker was created and focus was never moved, so it's still
+      // sitting on whichever button was actually clicked, right where a retry needs it to be
+      return;
+    }
+
+    /**
+     * only set it once, from whichever response happens to resolve first -
+     * everything below (aria-labels, the batch marker, the status line)
+     * reads this.resultsTotal, so it must land before any of that runs
+     */
+    if (this.resultsTotal === null) this.resultsTotal = total;
+
+    clearTimeout(loadingAnnounceTimer);
+
+    // remove any previous batch's marker, only the most recent should exist
+    const oldMarker = this.querySelector('.batch-marker');
+    if (oldMarker) oldMarker.remove();
+
+    const fragment = document.createDocumentFragment();
+    let marker = null;
+
+    // don't add a marker ahead of the very first batch, there's nothing to announce yet
+    if (!isFirstLoad) {
+      marker = document.createElement('li');
+      marker.style.listStyle = 'none';
+      marker.className = 'batch-marker visually-hidden';
+      /**
+       * role="listitem", deliberately, not role="separator": per the
+       * ARIA-in-HTML spec, once a <ul>/<ol> exposes a list role, its <li>
+       * children permit "no role other than listitem" - full stop, no
+       * override is sanctioned. separator (an earlier attempt at this,
+       * also used by BBC's GEL pagination pattern to keep markers like
+       * this one out of the listitem count) reads as the more clever fix,
+       * but it's flatly disallowed by spec regardless of BBC's precedent,
+       * and separately implies range/splitter semantics (aria-valuenow
+       * etc.) this element doesn't have. listitem is the semantically
+       * honest choice given the constraints.
+       *
+       * Same reason the real result <li>s below need this reasserted too
+       * (see that comment): list-style:none strips the implicit listitem
+       * role in Safari/VoiceOver, and restoring role="list" on the parent
+       * doesn't cascade back down to children - each <li> has to reassert
+       * it, this marker included, since it also has list-style:none.
+       *
+       * Accepted trade-off: while this marker is in the DOM (until its
+       * deferred removal on focusout, see below), VoiceOver's own list
+       * item count can be transiently inflated by one, and the marker can
+       * appear as a blank stop during rotor/arrow-key list navigation,
+       * since its text is aria-hidden. Both are edge cases - the window is
+       * brief, and the actually load-bearing positional info a user needs
+       * ("Banff National Park, 3 of 12") lives on each real result's own
+       * aria-label (see ResultEntry.render() above), not on VoiceOver's
+       * own list-level count, so nothing critical depends on that count
+       * being exact at every instant.
+       */
+      marker.setAttribute('role', 'listitem');
+      /**
+       * tabindex="-1" makes this focusable only via .focus() in script, never
+       * by a user just pressing Tab. Its real job is repositioning focus so
+       * forward/backward tab lands in the right place. The visible text below
+       * is for sighted keyboard users only, confirming what just happened at
+       * the exact point their focus landed, it does NOT carry the spoken
+       * announcement. That stays the aria-live status paragraph's job, since
+       * whether a focused, unlabeled <li> gets read automatically is
+       * inconsistent across screen readers, aria-hidden guarantees none of
+       * them ever pick this up, rather than relying on any one AT staying
+       * quiet by chance. aria-hidden goes on the inner span, never the li
+       * itself, an aria-hidden focused element is a known anti-pattern.
+       */
+      marker.tabIndex = -1;
+      /**
+       * Remove the marker after the user navigates away - it serves no
+       * purpose past the initial focus event, and if left in the DOM,
+       * could still be read out by screen readers when navigating by
+       * arrow keys.
+       *
+       * Deferred via setTimeout, not removed synchronously inside the
+       * focusout handler itself: focusout fires while the browser is
+       * mid-transfer, moving focus off this element and onto whatever's
+       * next, and mutating the DOM at that exact moment is worth avoiding
+       * on principle. That said, tested this specifically against a
+       * VoiceOver arrow-key-navigation issue we were chasing and it didn't
+       * help - that issue traces to a separate, confirmed WebKit bug
+       * documented at marker.focus() below, unrelated to this timing.
+       */
+      marker.addEventListener('focusout', () => {
+        setTimeout(() => marker.remove(), 0);
+      }, { once: true });
+      const markerText = document.createElement('span');
+      markerText.setAttribute('aria-hidden', 'true');
+      // computed pre-increment: this.shown is still the previous total here
+      const isLastBatch = this.shown + items.length >= this.resultsTotal;
+      markerText.textContent = isLastBatch
+        ? `${items.length} results loaded, all ${this.resultsTotal} results shown.`
+        : `${items.length} results loaded, ${this.shown + items.length} of ${this.resultsTotal} shown.`;
+      marker.appendChild(markerText);
+      fragment.appendChild(marker);
+    }
+
+    items.forEach((park, i) => {
+      const resultPosition = this.shown + i + 1;
+
+      const li = document.createElement('li');
+      /**
+       * The same Safari/VoiceOver bug that strips the <ul>'s implicit list
+       * role once list-style is none (see the role="list" note above) also
+       * strips each <li>'s implicit listitem role - and restoring the
+       * parent's role doesn't reliably restore the children's on its own.
+       * Both have to be reasserted explicitly, same as the marker's <li>
+       * above. Per the ARIA-in-HTML spec this is "NOT RECOMMENDED"
+       * (redundant, since listitem is already the <li>'s implicit role
+       * here) rather than disallowed. Harmless to state explicitly;
+       * needed only to work around the browser bug the spec doesn't
+       * account for.
+       */
+      li.setAttribute('role', 'listitem');
+
+      const entry = document.createElement('result-entry');
+      entry.setAttribute('label', park.name);
+      entry.setAttribute('href', '#');
+      entry.setAttribute('result-position', resultPosition);
+      entry.setAttribute('results-total', this.resultsTotal);
+      entry.setAttribute('description', park.description);
+      entry.setAttribute('province', park.province);
+
+      li.appendChild(entry);
+      fragment.appendChild(li);
+    });
+    this.listEl.appendChild(fragment);
+
+    this.shown += items.length;
+    this.loading = false;
+    this.listEl.removeAttribute('aria-busy');
+
+    if (this.shown >= this.resultsTotal) {
+      this.buttonEl.remove();
+      this.errorButtonEl.remove();
+      this.announce(`${items.length} results loaded, all ${this.resultsTotal} results shown.`);
+    } else {
+      this.buttonEl.removeAttribute('aria-disabled');
+      this.buttonEl.textContent = 'Load more';
+      this.announce(`${items.length} results loaded, ${this.shown} of ${this.resultsTotal} shown.`);
+    }
+
+    // move focus to the marker at the start of the new batch, not back to the button
+    // this keeps forward/backward tab order matching what a keyboard user expects
+    if (marker) {
+      marker.focus();
+    }
+
+    /**
+     * Known limitation, not a defect in this pattern: this .focus() call
+     * lands real keyboard focus correctly (confirmed - Tab/Shift+Tab from
+     * here move exactly where they should), but Safari/VoiceOver can fail
+     * to move its own virtual cursor to match, since the call happens
+     * asynchronously (after this awaited fetch resolves) rather than
+     * synchronously inside a trusted user-gesture handler. When that
+     * happens, VoiceOver's cursor stays wherever the user's last direct
+     * interaction left it, and the first arrow-key press after manually
+     * tabbing away can re-announce container context (e.g. the results
+     * list) before advancing, rather than moving cleanly. Confirmed, fixed
+     * WebKit bug, traced to an accessibility-tree update/notify ordering
+     * race: the originating commit message frames the reproduction case
+     * as dialogs specifically, but Apple's own published release notes for
+     * the fix describe it more generally: "Fixed an issue preventing
+     * VoiceOver from following focus() calls for newly added elements" -
+     * which is exactly this case (a script-focused element added
+     * asynchronously, outside a dialog). Shipped in Safari Technology
+     * Preview 246 (June 17, 2026; compatible with macOS Tahoe and the next
+     * major macOS), not yet confirmed in a stable Safari release as of
+     * this writing:
+     * https://github.com/WebKit/WebKit/commit/f3b6d2ac3f94074de46b2e61b19f48bf46a191db
+     * https://webkit.org/blog/18128/release-notes-for-safari-technology-preview-246/
+     * Not something addressable by changing the marker's role, removal
+     * timing, or focus target - it reproduces for any element focused
+     * after an async gap, not just this one. Tab/Shift-Tab remain fully
+     * correct throughout, and the aria-live announcement above already
+     * gives screen reader users the accurate "what just happened" message
+     * regardless of where VoiceOver's cursor currently thinks it is.
+     */
+  }
+
+  /**
+   * Creates and inserts the visible, sighted-user-only error message,
+   * positioned above both this.buttonEl and the demo's own
+   * "Simulate fetch failure" button. aria-hidden because this.statusEl's
+   * aria-live announcement already covers screen readers - without
+   * aria-hidden, a screen reader user tabbing/reading through the page
+   * would hit this text again as a second, redundant announcement.
+   */
+  showErrorMessage(message) {
+    this.clearErrorMessage();
+    this.errorEl = document.createElement('p');
+    this.errorEl.className = 'error-message';
+    this.errorEl.setAttribute('aria-hidden', 'true');
+    this.errorEl.textContent = message;
+    this.buttonEl.before(this.errorEl);
+  }
+
+  clearErrorMessage() {
+    if (!this.errorEl) return;
+    this.errorEl.remove();
+    this.errorEl = null;
+  }
+
+    /**
+   * Sets this.statusEl's text two animation frames from now rather than
+   * synchronously. Every announcement in this component goes through here
+   * so none of them risk landing in the same synchronous batch (and the
+   * same paint) as whatever other DOM changes are happening alongside it -
+   * a fresh set of <li>s, a button reset, showErrorMessage()'s new element,
+   * whatever. VoiceOver (and other screen readers) can silently drop an
+   * aria-live update that's bundled with other simultaneous DOM changes,
+   * rather than treating it as its own observable mutation.
+   *
+   * Double rAF, not setTimeout: a timer's firing time relative to the
+   * render pipeline isn't guaranteed by spec, it can land before or after
+   * a paint. requestAnimationFrame is explicitly scheduled relative to
+   * rendering, and nesting a second one inside the first guarantees at
+   * least one full paint (the one carrying whatever else just changed) has
+   * already completed before this text change fires as its own, later,
+   * isolated update.
+   *
+   * The clear on the first frame empties the region a full paint before
+   * the new text lands, so the region is never mutated from one non-empty
+   * string straight to another. Worth being clear about what this does and
+   * doesn't buy: it does NOT make a repeated identical message announce a
+   * second time. Tested in VoiceOver/Safari - two identical errors in a
+   * row only announce once, whether the region is cleared in between or
+   * not, because VoiceOver appears to compare incoming text against what
+   * it last spoke rather than against what's currently in the DOM. An
+   * empty string is never spoken, so it doesn't reset that comparison. A
+   * different message in between does. Kept anyway: it costs nothing, it
+   * keeps every update a clean single-string change, and it may matter in
+   * NVDA or JAWS, neither of which has been tested here.
+   */
+  announce(message) {
+    requestAnimationFrame(() => {
+      this.statusEl.textContent = '';
+      requestAnimationFrame(() => {
+        this.statusEl.textContent = message;
+      });
+    });
+  }
+}
+
+customElements.define('load-more-list', LoadMoreList);
+</script>
+
+</body>
+</html>

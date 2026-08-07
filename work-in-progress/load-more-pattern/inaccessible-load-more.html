@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Load more pattern | WCAG Made Simple</title>
+<link rel="stylesheet" href="./css/main.css">
+</head>
+<body>
+
+<h1>Load more pattern</h1>
+<p>demo of a load-more list built as a plain web component. no framework, no build step, just <code>customElements.define</code>.</p>
+
+<h2 id="parksHeading">Canadian National Parks</h2>
+<load-more-list batch-size="5"></load-more-list>
+
+<!-- import parks data -->
+<script src="./data/parks-data.js"></script>
+
+<script>
+/**
+ * <result-entry> - A single result.
+ */
+class ResultEntry extends HTMLElement {
+  static get observedAttributes() {
+    return ['label', 'href', 'result-position', 'results-total', 'description', 'province'];
+  }
+
+  connectedCallback() {
+    this.render();
+  }
+
+  attributeChangedCallback() {
+    if (this.isConnected) this.render();
+  }
+
+  render() {
+    this.replaceChildren();
+
+    // Map component props to vars
+    const label = this.getAttribute('label') || '';
+    const href = this.getAttribute('href') || '#';
+    const description = this.getAttribute('description') || '';
+    const province = this.getAttribute('province') || '';
+
+    const heading = document.createElement('h3');
+    heading.className = 'result-title';
+    const link = document.createElement('a');
+    link.href = href;
+    link.textContent = label;
+    heading.appendChild(link);
+    this.appendChild(heading);
+
+    if (description) {
+      const desc = document.createElement('p');
+      desc.className = 'result-description';
+      desc.textContent = description;
+      this.appendChild(desc);
+    }
+
+    if (province) {
+      const badge = document.createElement('span');
+      badge.className = 'result-province';
+      badge.innerHTML = province;
+      this.appendChild(badge);
+    }
+  }
+}
+
+customElements.define('result-entry', ResultEntry);
+
+/**
+ * <load-more-list> - fetches and displays results.
+ */
+class LoadMoreList extends HTMLElement {
+  constructor() {
+    super();
+    // unknown until the first fetch response tells us, since the
+    // component is the one doing the fetching, not the caller
+    this.resultsTotal = null;
+    this.batchSize = parseInt(this.getAttribute('batch-size') || '10');
+    this.shown = 0;
+    this.loading = false;
+  }
+
+  connectedCallback() {
+    this.innerHTML = `
+      <ul id="resultsList"></ul>
+      <button type="button" id="lm-button">Load more</button>
+    `;
+
+    this.listEl = this.querySelector('ul');
+    this.buttonEl = this.querySelector('button');
+
+    this.buttonEl.addEventListener('click', () => this.loadMore());
+
+    this.loadMore();
+  }
+
+  // simulate a network call, replace with a real fetch in production.
+  // a real paginated endpoint's response body would carry its own total
+  // count alongside the page of items, e.g. { items, total }
+  fetchBatch() {
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const total = PARKS_DATA.length;
+        const count = Math.min(this.batchSize, total - this.shown);
+        const items = PARKS_DATA.slice(this.shown, this.shown + count);
+        resolve({ items, total });
+      }, 1200);
+    });
+  }
+
+  async loadMore() {
+    // guard against double-clicks and overshooting the resultsTotal.
+    // resultsTotal is null until the first fetch resolves, so that check
+    // is skipped until there's an actual number to compare against
+    if (this.loading || (this.resultsTotal !== null && this.shown >= this.resultsTotal)) return;
+
+    this.loading = true;
+    this.buttonEl.disabled = true;
+    this.buttonEl.textContent = 'Loading...';
+
+    const { items, total } = await this.fetchBatch();
+
+    // only set it once, from whichever response happens to resolve first
+    if (this.resultsTotal === null) this.resultsTotal = total;
+
+    const fragment = document.createDocumentFragment();
+
+    items.forEach((park) => {
+      const li = document.createElement('li');
+
+      const entry = document.createElement('result-entry');
+      entry.setAttribute('label', park.name);
+      entry.setAttribute('href', '#');
+      entry.setAttribute('description', park.description);
+      entry.setAttribute('province', park.province);
+
+      li.appendChild(entry);
+      fragment.appendChild(li);
+    });
+    this.listEl.appendChild(fragment);
+
+    this.shown += items.length;
+    this.loading = false;
+
+    if (this.shown >= this.resultsTotal) {
+      this.buttonEl.remove();
+    } else {
+      this.buttonEl.disabled = false;
+      this.buttonEl.textContent = 'Load more';
+    }
+  }
+}
+
+customElements.define('load-more-list', LoadMoreList);
+</script>
+
+</body>
+</html>

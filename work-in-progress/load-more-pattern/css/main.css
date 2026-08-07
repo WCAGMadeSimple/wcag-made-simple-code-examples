@@ -1,0 +1,119 @@
+  :root {
+    --color-text: #2b3a4a;
+    --color-muted: #445;
+    --color-primary: #236DA9;
+    --color-primary-bg: #e2eaf1;
+    --color-border: #e8ecf0;
+    --color-error: #e42d27;
+    --focus-ring: 3px solid var(--color-primary);
+  }
+
+  body {
+    font-family: system-ui, sans-serif;
+    max-width: 640px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+    color: var(--color-text);
+  }
+
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  load-more-list ul {
+    list-style: none;
+    padding: 0;
+  }
+
+  load-more-list li {
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .load-more-button {
+    margin-top: 1rem;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    border: 2px solid var(--color-primary);
+    background: #fff;
+    color: var(--color-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+
+  .load-more-button--error {
+    display: block;
+    border: 2px solid var(--color-error);
+    color: var(--color-error);
+  }
+
+  .load-more-button--error:active {
+    background: var(--color-error);
+    color: var(--color-primary-bg);
+  }
+
+  .load-more-button[aria-disabled="true"] {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .load-more-button:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .result-title {
+    margin: 0 0 0.25rem;
+    font-size: 1.05rem;
+  }
+
+  .result-title a {
+    color: var(--color-primary);
+  }
+
+  .result-description {
+    margin: 0 0 0.4rem;
+    font-size: 0.9rem;
+    color: var(--color-muted);
+  }
+
+  .result-province {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--color-primary);
+    background: var(--color-primary-bg);
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+  }
+
+  .error-message {
+    color: var(--color-error);
+    font-weight: bold;
+  }
+
+  /*
+   * The !important declarations are to ensure proper override of the 
+   * .visually-hidden styles which are also applied to this element.
+   */
+  .batch-marker:focus-visible {
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    clip-path: none !important;
+    white-space: normal !important;
+    padding: 0.5rem 0 !important;
+    margin-bottom: 0.5rem !important;
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+  }
