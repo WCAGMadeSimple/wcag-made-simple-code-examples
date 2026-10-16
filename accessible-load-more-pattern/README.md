@@ -17,6 +17,7 @@ because of a VoiceOver-specific quirk, it is called out below.
 ## What's in This Example
 
 - `accessible-load-more-pattern.html` – The full pattern, built as plain web components
+- `aria-posinset-aria-setsize-load-more-pattern.html` - `aria-label` is swapped for `aria-posinset` and `aria-setsize` to compare how the two approaches act on screen readers
 - `inaccessible-load-more-pattern.html` – The same pattern with every accessibility affordance removed, for comparison
 - `css/main.css` – Shared styles, including the contrast-checked focus and disabled states
 - `data/parks-data.js` – 32 Canadian national parks, used as the fake paginated response
@@ -406,7 +407,7 @@ Safari release as of writing.
 ## Related Resources
 
 - (Blog) [Accessible Load More Pattern | Nobody's Left Guessing](https://wcagmadesimple.com/blog/accessible-load-more-pattern)
-- (YouTube) Accessible Load More Pattern (Coming Soon)
+- (YouTube) [Accessible Load More Pattern | Nobody's Left Guessing](https://www.youtube.com/watch?v=D-6BZjFN6iw)
 - (Aleksandr Hovhannisyan) [Managing Keyboard Focus for Load-More Buttons](https://www.aleksandrhovhannisyan.com/blog/load-more-button-focus/)
 - (Alessio Carnevale) [An accessible “Load more” implementation](https://medium.com/@alessio.carnevale/an-accessible-load-more-implementation-b55c07603bd8)
 - (Nielsen Norman Group) [Response Times: The 3 Important Limits](https://www.nngroup.com/articles/response-times-3-important-limits/)
